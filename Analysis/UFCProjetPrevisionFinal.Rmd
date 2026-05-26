@@ -1,0 +1,201 @@
+
+
+
+
+
+```{r}
+# Chargement des bibliothèques nécessaires
+library(caret)          # Pour la validation croisée, le prétraitement et l'évaluation
+library(e1071)          # Naïve Bayes
+library(class)          # KNN
+library(randomForest)   # Random Forest
+library(nnet)           # Régression logistique pour le stacking
+library(adabag)         # AdaBoost
+library(dplyr)          # Manipulation de données
+library(rpart)          # Arbre de décision
+library(rpart.plot)     # Visualisation d'arbre
+
+# Chargement du dataset UFC
+ufc_data <- read.csv("ufc_top12_data_synthetic_combined.csv", header = TRUE, sep = ",", dec = ".")
+
+# Conversion de Winner en facteur
+ufc_data$Winner <- as.factor(ufc_data$Winner)
+
+# Mélange des données et séparation Train/Test (85%-15%)
+set.seed(123)
+ufc_data <- ufc_data[sample(nrow(ufc_data)), ]
+trainIndex <- sample(1:nrow(ufc_data), size = round(0.85 * nrow(ufc_data)))  
+data_train <- ufc_data[trainIndex, ]
+data_test <- ufc_data[-trainIndex, ]
+
+# Prétraitement : centrage et réduction pour les modèles sensibles à l'échelle (ex: KNN)
+preProc <- preProcess(data_train[, -ncol(data_train)], method = c("center", "scale"))
+data_train_scaled <- predict(preProc, data_train[, -ncol(data_train)])
+data_test_scaled  <- predict(preProc, data_test[, -ncol(data_test)])
+
+# Ajout de la variable cible aux données prétraitées
+data_train_scaled$Winner <- data_train$Winner
+data_test_scaled$Winner  <- data_test$Winner
+
+# Réduction de dimensionnalité avec PCA pour diminuer la colinéarité
+# Ici, on conserve les composantes qui expliquent 95 % de la variance
+preProc_pca <- preProcess(data_train_scaled[, -ncol(data_train_scaled)], method = "pca", thresh = 0.95)
+data_train_pca <- predict(preProc_pca, data_train_scaled[, -ncol(data_train_scaled)])
+data_test_pca  <- predict(preProc_pca, data_test_scaled[, -ncol(data_test_scaled)])
+
+# Reconstitution des données avec la variable cible
+data_train_pca$Winner <- data_train_scaled$Winner
+data_test_pca$Winner  <- data_test_scaled$Winner
+
+
+
+```
+
+```{r}
+# Entraînement du modèle Naïve Bayes sur les données transformées
+model_nb <- naiveBayes(Winner ~ ., data = data_train_pca)
+
+# Prédictions des probabilités sur le jeu de test
+pred_nb_prob <- predict(model_nb, data_test_pca, type = "raw")[, 2]
+
+# Conversion des probabilités en classes binaires avec un seuil de 0.5
+pred_nb <- ifelse(pred_nb_prob > 0.5, 1, 0)
+
+# Évaluation du modèle via la matrice de confusion
+conf_matrix_nb <- confusionMatrix(as.factor(pred_nb), data_test_pca$Winner)
+
+# Calcul de l'erreur absolue moyenne (MAE)
+mae_nb <- mean(abs(pred_nb - as.numeric(as.character(data_test_pca$Winner))))
+
+# Affichage des résultats
+print(conf_matrix_nb)
+print(paste("Accuracy Naïve Bayes avec PCA :", round(conf_matrix_nb$overall["Accuracy"] * 100, 2), "%"))
+print(paste("MAE Naïve Bayes avec PCA :", round(mae_nb, 4)))
+
+
+
+```
+
+
+```{r}
+
+#  KNN : Optimisation de k sur les données prétraitées
+k_values <- 1:10
+accuracies_knn <- sapply(k_values, function(k) {
+  knn_model <- knn(train = data_train_scaled[, -ncol(data_train_scaled)], 
+                   test = data_test_scaled[, -ncol(data_test_scaled)], 
+                   cl = data_train_scaled$Winner, 
+                   k = k, prob = TRUE)
+  mean(knn_model == data_test_scaled$Winner)
+})
+best_k <- k_values[which.max(accuracies_knn)]
+print(paste("Meilleur k trouvé :", best_k))
+
+# Prédiction avec le meilleur k et extraction des probabilités pour la classe "1"
+knn_model <- knn(train = data_train_scaled[, -ncol(data_train_scaled)], 
+                 test = data_test_scaled[, -ncol(data_test_scaled)], 
+                 cl = data_train_scaled$Winner, 
+                 k = best_k, prob = TRUE)
+# Extraction de la probabilité pour la classe "1"
+pred_knn_prob <- ifelse(knn_model == "1", attr(knn_model, "prob"), 1 - attr(knn_model, "prob"))
+pred_knn <- ifelse(pred_knn_prob > 0.5, 1, 0)
+accuracy_knn <- mean(pred_knn == as.numeric(as.character(data_test_scaled$Winner)))
+mae_knn <- mean(abs(pred_knn - as.numeric(as.character(data_test_scaled$Winner))))
+
+print(paste("Accuracy KNN (k=", best_k, ") :", round(accuracy_knn * 100, 2), "%"))
+print(paste("MAE KNN :", round(mae_knn, 4)))
+
+
+
+```
+
+```{r}
+# Random Forest : suppression de maxnodes et ajustement de mtry
+rf_model <- randomForest(Winner ~ ., data = data_train, 
+                         ntree = 100, 
+                         mtry = 4,    # Ajustement de mtry (par rapport à 3)
+                         importance = TRUE)
+# Obtenir les probabilités de la classe "1"
+pred_rf_prob <- predict(rf_model, data_test, type = "prob")[,2]
+pred_rf <- ifelse(pred_rf_prob > 0.5, 1, 0)
+conf_matrix_rf <- confusionMatrix(as.factor(pred_rf), data_test$Winner)
+mae_rf <- mean(abs(pred_rf - as.numeric(as.character(data_test$Winner))))
+
+print(paste("Accuracy Random Forest :", round(conf_matrix_rf$overall["Accuracy"] * 100, 2), "%"))
+print(paste("MAE Random Forest :", round(mae_rf, 4)))
+
+
+
+
+
+
+```
+```{r}
+# AdaBoost : augmentation de mfinal pour potentiellement améliorer la performance
+adaboost_model <- boosting(Winner ~ ., data = data_train, 
+                           mfinal = 10,   
+                           coeflearn = "Breiman")
+prediction_adaboost <- predict(adaboost_model, data_test)
+# Extraction de la probabilité pour la classe "1"
+pred_adaboost_prob <- prediction_adaboost$prob[,2]
+pred_adaboost <- ifelse(pred_adaboost_prob > 0.5, 1, 0)
+conf_matrix_adaboost <- confusionMatrix(as.factor(pred_adaboost), data_test$Winner)
+mae_adaboost <- mean(abs(pred_adaboost - as.numeric(as.character(data_test$Winner))))
+
+print(paste("Accuracy AdaBoost :", round(conf_matrix_adaboost$overall["Accuracy"] * 100, 2), "%"))
+print(paste("MAE AdaBoost :", round(mae_adaboost, 4)))
+
+```
+```{r}
+# Création du dataset pour le métamodèle en utilisant les probabilités
+stacked_data <- data.frame(
+  pred_nb = pred_nb_prob,
+  pred_knn = pred_knn_prob,
+  pred_rf = pred_rf_prob,
+  pred_adaboost = pred_adaboost_prob,
+  Winner = as.numeric(as.character(data_test$Winner))
+)
+
+# Métamodèle : Régression Logistique
+meta_model <- glm(Winner ~ ., data = stacked_data, family = binomial)
+pred_final_prob <- predict(meta_model, stacked_data, type = "response")
+pred_final <- ifelse(pred_final_prob > 0.5, 1, 0)
+accuracy_stacking <- mean(pred_final == stacked_data$Winner)
+mae_stacking <- mean(abs(pred_final - stacked_data$Winner))
+
+print(paste("Accuracy Stacking :", round(accuracy_stacking * 100, 2), "%"))
+print(paste("MAE Stacking :", round(mae_stacking, 4)))
+
+
+```
+```{r}
+#  Comparaison des modèles
+print("Comparaison des modèles :")
+print(paste("Accuracy Naïve Bayes :", round(conf_matrix_nb$overall["Accuracy"] * 100, 2), "%"))
+print(paste("MAE Naïve Bayes :", round(mae_nb, 4)))
+
+print(paste("Accuracy KNN :", round(accuracy_knn * 100, 2), "%"))
+print(paste("MAE KNN :", round(mae_knn, 4)))
+
+print(paste("Accuracy Random Forest :", round(conf_matrix_rf$overall["Accuracy"] * 100, 2), "%"))
+print(paste("MAE Random Forest :", round(mae_rf, 4)))
+
+print(paste("Accuracy AdaBoost :", round(conf_matrix_adaboost$overall["Accuracy"] * 100, 2), "%"))
+print(paste("MAE AdaBoost :", round(mae_adaboost, 4)))
+
+print(paste("Accuracy Stacking :", round(accuracy_stacking * 100, 2), "%"))
+print(paste("MAE Stacking :", round(mae_stacking, 4)))
+
+
+```
+```{r}
+#XGBOOST #Gradient Boosting à venir...
+
+
+
+
+```
+
+
+
+

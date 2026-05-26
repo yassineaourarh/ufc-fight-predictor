@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prédiction UFC</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h2>Prédiction UFC - Entrez les valeurs :</h2>
+        <form action="/predict" method="post">
+            <div class="form-row">
+                <div class="form-column left-column">
+                    <h3>Red Fighter</h3>
+                    <label for="RedAvgSigStrLanded">Red Average Significant Strike Landed:</label>
+                    <input type="range" name="RedAvgSigStrLanded" min="0" max="5" step="1" value="2" id="RedAvgSigStrLanded" oninput="updateValue('RedAvgSigStrLanded')">
+                    <span id="RedAvgSigStrLanded-value">2</span><br>
+
+                    <label for="RedAvgSigStrPct">Red Average Significant Strike Percentage:</label>
+                    <input type="range" name="RedAvgSigStrPct" min="0" max="100" step="1" value="50" id="RedAvgSigStrPct" oninput="updateValue('RedAvgSigStrPct')">
+                    <span id="RedAvgSigStrPct-value">50</span><br>
+
+                    <label for="RedAvgTDLanded">Red Average Takedowns Landed:</label>
+                    <input type="range" name="RedAvgTDLanded" min="0" max="5" step="1" value="2" id="RedAvgTDLanded" oninput="updateValue('RedAvgTDLanded')">
+                    <span id="RedAvgTDLanded-value">2</span><br>
+
+                    <label for="RedReachCms">Red Reach (cm):</label>
+                    <input type="range" name="RedReachCms" min="50" max="250" step="1" value="170" id="RedReachCms" oninput="updateValue('RedReachCms')">
+                    <span id="RedReachCms-value">170</span><br>
+
+                    <label for="RedHeightCms">Red Height (cm):</label>
+                    <input type="range" name="RedHeightCms" min="150" max="220" step="1" value="175" id="RedHeightCms" oninput="updateValue('RedHeightCms')">
+                    <span id="RedHeightCms-value">175</span><br>
+
+                    <label for="RedAge">Red Age:</label>
+                    <input type="range" name="RedAge" min="18" max="45" step="1" value="30" id="RedAge" oninput="updateValue('RedAge')">
+                    <span id="RedAge-value">30</span><br>
+
+                </div>
+
+                <div class="form-column right-column">
+                    <h3>Blue Fighter</h3>
+
+                    <label for="BlueAvgSigStrLanded">Blue Average Significant Strike Landed:</label>
+                    <input type="range" name="BlueAvgSigStrLanded" min="0" max="5" step="1" value="2" id="BlueAvgSigStrLanded" oninput="updateValue('BlueAvgSigStrLanded')">
+                    <span id="BlueAvgSigStrLanded-value">2</span><br>
+
+                    <label for="BlueAvgSigStrPct">Blue Average Significant Strike Percentage:</label>
+                    <input type="range" name="BlueAvgSigStrPct" min="0" max="100" step="1" value="50" id="BlueAvgSigStrPct" oninput="updateValue('BlueAvgSigStrPct')">
+                    <span id="BlueAvgSigStrPct-value">50</span><br>
+
+                    <label for="BlueAvgTDLanded">Blue Average Takedowns Landed:</label>
+                    <input type="range" name="BlueAvgTDLanded" min="0" max="5" step="1" value="2" id="BlueAvgTDLanded" oninput="updateValue('BlueAvgTDLanded')">
+                    <span id="BlueAvgTDLanded-value">2</span><br>
+
+                    <label for="BlueReachCms">Blue Reach (cm):</label>
+                    <input type="range" name="BlueReachCms" min="50" max="250" step="1" value="170" id="BlueReachCms" oninput="updateValue('BlueReachCms')">
+                    <span id="BlueReachCms-value">170</span><br>
+
+                    <label for="BlueHeightCms">Blue Height (cm):</label>
+                    <input type="range" name="BlueHeightCms" min="150" max="220" step="1" value="175" id="BlueHeightCms" oninput="updateValue('BlueHeightCms')">
+                    <span id="BlueHeightCms-value">175</span><br>
+
+                    <label for="BlueAge">Blue Age:</label>
+                    <input type="range" name="BlueAge" min="18" max="45" step="1" value="30" id="BlueAge" oninput="updateValue('BlueAge')">
+                    <span id="BlueAge-value">30</span><br>
+                </div>
+            </div>
+            <button type="submit">Prédire</button>
+        </form>
+    </div>
+
+    <div id="result" class="result-container">
+        <!-- Les résultats de la prédiction s'afficheront ici -->
+    </div>
+
+    <script>
+        // Fonction pour mettre à jour les valeurs affichées à côté des sliders
+        function updateValue(sliderId) {
+            var value = document.getElementById(sliderId).value;
+            document.getElementById(sliderId + '-value').innerText = value;
+        }
+    </script>
+</body>
+</html>

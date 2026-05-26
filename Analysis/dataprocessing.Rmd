@@ -1,0 +1,679 @@
+---
+title: "dataProcessing2"
+author: "AlouiGhaieth_AourarhYassine"
+date: "2025-01-20"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(tidyverse)       
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(stringr)
+library(randomForest)    # Pour le modèle Random Forest
+library(xgboost)
+library(scales)
+library(Metrics)
+
+data = read.csv('ufc_data_cleaned_filtered.csv')
+summary(data)
+```
+
+## dans un premier temps on procede par le nettoyage du data
+
+```{r}
+# Charger le dataset
+ufc_data <- read.csv("ufc-master.csv", stringsAsFactors = FALSE)
+
+# Étape 1 : Sélection et nettoyage des colonnes
+selected_columns <- c("BlueOdds", "RedOdds", "Gender",
+                      "BlueAvgSigStrLanded", "RedAvgSigStrLanded",
+                      "BlueAvgSigStrPct", "RedAvgSigStrPct",
+                      "BlueAvgSubAtt", "RedAvgSubAtt",
+                      "BlueAvgTDLanded", "RedAvgTDLanded",
+                      "BlueAvgTDPct", "RedAvgTDPct",
+                      "BlueLosses", "RedLosses",
+                      "BlueWins", "RedWins",
+                      "BlueStance", "RedStance",
+                      "BlueHeightCms", "RedHeightCms",
+                      "BlueReachCms", "RedReachCms",
+                      "BlueAge", "RedAge", "Winner")
+
+# Sauvegarder le dataset nettoyé sur le disque local
+ufc_data_cleaned <- ufc_data %>%
+  select(all_of(selected_columns)) %>% 
+  filter_all(any_vars(!is.na(.))) %>% 
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .))) %>% 
+  distinct()
+
+write.csv(ufc_data_cleaned, "ufc_data_cleaned_filtered.csv", row.names = FALSE)
+cat("Dataset nettoyé exporté sous le nom 'ufc_data_cleaned_filtered.csv'.\n")
+
+# Convertir 'Winner' en facteur (si ce n'est pas déjà fait)
+ufc_data_cleaned$Winner <- as.factor(ufc_data_cleaned$Winner)
+
+# Entraîner un modèle Random Forest
+set.seed(123)
+rf_model <- randomForest(Winner ~ ., data = ufc_data_cleaned %>% select(all_of(selected_columns)), importance = TRUE)
+
+# Extraire l'importance des variables
+importance_data <- as.data.frame(importance(rf_model))
+importance_data$Variable <- rownames(importance_data)
+rownames(importance_data) <- NULL
+
+# Trier par importance décroissante
+importance_data <- importance_data[order(-importance_data$MeanDecreaseGini), ]
+
+# Visualiser l'importance des variables
+ggplot(importance_data, aes(x = reorder(Variable, MeanDecreaseGini), y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Importance des variables selon Random Forest",
+       x = "Variables",
+       y = "Importance (Mean Decrease Gini)") +
+  theme_minimal()
+```
+```{r}
+#Scatter points 
+
+# age vs aavrgsigstr landed 
+plot(
+  ufc_data_cleaned$BlueAge, 
+  ufc_data_cleaned$BlueLosses, 
+  xlab = " (BlueAge)", 
+  ylab = "Strikes significatifs atterris (BlueAvgSigStrLanded)", 
+  main = "Relation entre l'âge et les coups significatifs atterris", 
+  pch = 19, 
+  col = "blue"
+)
+
+ufc_data_cleaned <- ufc_data_cleaned %>% filter(!(BlueWins == 0 & BlueLosses == 0))
+ufc_data_cleaned <- ufc_data_cleaned %>% filter(!(RedWins == 0 & RedLosses == 0))
+
+```
+```{r}
+ufc_data_cleaned
+
+```
+
+```{r}
+cols_to_check <- c("BlueAvgSigStrLanded", "RedAvgSigStrLanded", "BlueAvgSubAtt", 
+                   "RedAvgSubAtt", "BlueAvgTDLanded", "RedAvgTDLanded")
+
+# Nombre maximum de zéros autorisé par ligne
+max_zeros <- 2
+
+# Filtrer les lignes avec moins ou égal à max_zeros zéros
+ufc_data_cleaned_filtered <- ufc_data_cleaned %>%
+  filter(rowSums(across(all_of(cols_to_check), ~ . == 0)) <= max_zeros)
+
+# Vérifier le résultat
+print(dim(ufc_data_cleaned_filtered))  # Nombre de lignes et colonnes après le filtre 
+```
+
+```{r}
+plot(
+  ufc_data_cleaned$BlueHeightCms, 
+  ufc_data_cleaned$BlueReachCms, 
+  xlab = "Height Average in CMs", 
+  ylab = "Reach in CMs", 
+  main = "Relation entre la taille et l'allonge", 
+  pch = 19, 
+  col = "blue"
+)
+
+```
+```{r}
+plot(
+  ufc_data_cleaned$BlueAge, 
+  ufc_data_cleaned$BlueWins, 
+  xlab = "Age (Blue)", 
+  ylab = "Wins (Blue)", 
+  main = "Relation entre l'âge et les victoires des combattants bleus", 
+  pch = 19, 
+  col = "blue"
+)
+
+
+```
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Définir les tranches d'âge si ce n'est pas déjà fait
+ufc_data_cleaned$AgeGroup <- cut(
+  ufc_data_cleaned$BlueAge, 
+  breaks = seq(18, 50, by = 5),  # Tranches de 5 ans entre 18 et 50 ans
+  right = FALSE,                 # Exclure la borne supérieure
+  labels = paste(seq(18, 45, by = 5), seq(23, 50, by = 5), sep = "-")
+)
+
+# KDE combinée avec l'histogramme des victoires
+ggplot(ufc_data_cleaned, aes(x = BlueAge)) +
+  geom_histogram(binwidth = 5, aes(y = ..density..), fill = "skyblue", color = "blue", alpha = 0.7) +  # Histogramme
+  geom_density(color = "red", size = 1.2, alpha = 0.7) +  # KDE en rouge
+  labs(
+    title = "Densité et histogramme des victoires par âge",
+    x = "Âge des combattants bleus",
+    y = "Densité"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r}
+# Charger les bibliothèques nécessaires
+library(ggplot2)
+library(dplyr)
+
+# Définir les tranches d'âge
+ufc_data_cleaned$AgeGroup <- cut(
+  ufc_data_cleaned$BlueAge, 
+  breaks = seq(18, 50, by = 5),  # Tranches de 5 ans entre 18 et 50 ans
+  right = FALSE,                 # Exclure la borne supérieure
+  labels = paste(seq(18, 45, by = 5), seq(23, 50, by = 5), sep = "-")
+)
+
+# Calculer la moyenne des coups significatifs atterris pour chaque tranche d'âge
+age_group_avg_sig_str_landed <- aggregate(
+  BlueAvgSigStrLanded ~ AgeGroup, 
+  data = ufc_data_cleaned, 
+  FUN = mean
+)
+
+# Reproduire l'histogramme initial
+barplot(
+  height = age_group_avg_sig_str_landed$BlueAvgSigStrLanded, 
+  names.arg = age_group_avg_sig_str_landed$AgeGroup, 
+  xlab = "Tranches d'âge (Blue)", 
+  ylab = "Moyenne des coups significatifs atterris", 
+  main = "Moyenne des coups significatifs atterris par tranche d'âge (combattants bleus)", 
+  col = "lightgreen", 
+  border = "green", 
+  las = 2,   # Rotation des étiquettes sur l'axe x
+  cex.names = 0.8  # Réduction de la taille des étiquettes
+)
+
+# KDE ajoutée pour la variable `BlueAvgSigStrLanded`
+ggplot(ufc_data_cleaned, aes(x = BlueAvgSigStrLanded)) +
+  geom_histogram(
+    aes(y = ..density..), 
+    binwidth = 5, 
+    fill = "lightgreen", 
+    color = "green", 
+    alpha = 0.7
+  ) +
+  geom_density(
+    color = "blue", 
+    size = 1.2, 
+    alpha = 0.6
+  ) +
+  labs(
+    title = "Densité et histogramme des coups significatifs atterris",
+    x = "Coups significatifs atterris (BlueAvgSigStrLanded)",
+    y = "Densité"
+  ) +
+  theme_minimal()
+
+```
+```{r}
+# Scatter plot entre BlueReachCms et BlueWins
+plot(
+  ufc_data_cleaned$BlueReachCms, 
+  ufc_data_cleaned$BlueWins, 
+  xlab = "Allonge en CM (Blue)", 
+  ylab = "Victoires (Blue)", 
+  main = "Relation entre l'allonge et les victoires des combattants bleus", 
+  pch = 19, 
+  col = "blue"
+)
+
+```
+```{r}
+# Charger les bibliothèques nécessaires
+library(ggplot2)
+
+# 3. Distribution des performances par allonge
+# Scatter plot entre BlueReachCms et BlueWins
+plot(
+  ufc_data_cleaned$BlueReachCms, 
+  ufc_data_cleaned$BlueWins, 
+  xlab = "Allonge en CM (Blue)", 
+  ylab = "Victoires (Blue)", 
+  main = "Relation entre l'allonge et les victoires des combattants bleus", 
+  pch = 19, 
+  col = "blue"
+)
+
+# 4. Distribution des cotes (BlueOdds) par performances
+# Histogramme de BlueOdds stratifié par Winner
+library(ggplot2)
+
+# Supprimer les valeurs manquantes de BlueOdds pour garantir des données cohérentes
+blue_odds_data <- na.omit(ufc_data_cleaned$BlueOdds)
+
+# Calculer la densité gaussienne (KDE) sur les mêmes données
+kde <- density(blue_odds_data, kernel = "gaussian")
+
+# Créer un dataframe pour l'histogramme et la KDE
+kde_data <- data.frame(x = kde$x, y = kde$y)
+
+# Histogramme avec KDE gaussienne superposée
+ggplot() +
+  # Histogramme avec densité
+  geom_histogram(
+    data = data.frame(BlueOdds = blue_odds_data),
+    aes(x = BlueOdds, y = ..density..),
+    binwidth = 10, 
+    fill = "skyblue", 
+    color = "black", 
+    alpha = 0.6
+  ) +
+  # Superposition de la courbe KDE
+  geom_line(
+    data = kde_data, 
+    aes(x = x, y = y), 
+    color = "blue", 
+    size = 1.2
+  ) +
+  labs(
+    title = "Histogramme et KDE gaussienne des cotes (BlueOdds)",
+    x = "Cotes (BlueOdds)",
+    y = "Densité"
+  ) +
+  theme_minimal()
+
+
+library(ggplot2)
+
+# Supprimer les valeurs manquantes de RedOdds pour garantir des données cohérentes
+red_odds_data <- na.omit(ufc_data_cleaned$RedOdds)
+
+# Calculer la densité gaussienne (KDE) sur les mêmes données
+kde <- density(red_odds_data, kernel = "gaussian")
+
+# Créer un dataframe pour l'histogramme et la KDE
+kde_data <- data.frame(x = kde$x, y = kde$y)
+
+# Histogramme avec KDE gaussienne superposée
+ggplot() +
+  # Histogramme avec densité
+  geom_histogram(
+    data = data.frame(RedOdds = red_odds_data),
+    aes(x = RedOdds, y = ..density..),
+    binwidth = 10, 
+    fill = "pink", 
+    color = "black", 
+    alpha = 0.6
+  ) +
+  # Superposition de la courbe KDE
+  geom_line(
+    data = kde_data, 
+    aes(x = x, y = y), 
+    color = "red", 
+    size = 1.2
+  ) +
+  labs(
+    title = "Histogramme et KDE gaussienne des cotes (RedOdds)",
+    x = "Cotes (RedOdds)",
+    y = "Densité"
+  ) +
+  theme_minimal()
+
+
+
+
+
+# 5. Distribution des coups significatifs par précision
+# Scatter plot entre BlueAvgSigStrLanded et BlueAvgSigStrPct
+plot(
+  ufc_data_cleaned$BlueAvgSigStrLanded, 
+  ufc_data_cleaned$BlueAvgSigStrPct, 
+  xlab = "Coups significatifs atterris (BlueAvgSigStrLanded)", 
+  ylab = "Précision des coups significatifs (BlueAvgSigStrPct)", 
+  main = "Relation entre coups significatifs et précision",
+  pch = 19, 
+  col = "blue"
+)
+
+# 6. Distribution des victoires par taille
+# Boxplot de BlueHeightCms stratifié par Winner
+ggplot(ufc_data_cleaned, aes(x = Winner, y = BlueHeightCms, fill = Winner)) +
+  geom_boxplot() +
+  labs(title = "Distribution des tailles par victoires",
+       x = "Victoires (Winner)", 
+       y = "Taille en CM (BlueHeightCms)") +
+  scale_fill_manual(values = c("blue", "red")) +
+  theme_minimal()
+
+# 7. Distribution des takedowns par tranche d'âge
+# Définir les tranches d'âge
+library(ggplot2)
+
+# Définir les tranches d'âge
+ufc_data_cleaned$AgeGroup <- cut(
+  ufc_data_cleaned$BlueAge, 
+  breaks = seq(18, 50, by = 5),  
+  right = FALSE,                 
+  labels = paste(seq(18, 45, by = 5), seq(23, 50, by = 5), sep = "-")
+)
+
+# Histogramme des takedowns réalisés par tranche d'âge
+ggplot(ufc_data_cleaned, aes(x = BlueAvgTDLanded, fill = AgeGroup)) +
+  geom_histogram(
+    binwidth = 1, 
+    position = "dodge", 
+    color = "black"
+  ) +
+  labs(
+    title = "Distribution des takedowns par tranche d'âge",
+    x = "Takedowns réalisés (BlueAvgTDLanded)", 
+    y = "Fréquence"
+  ) +
+  scale_fill_brewer(palette = "Set3") +  # Palette pour les barres
+  theme_minimal()
+
+
+# 8. Comparaison des victoires et défaites par précision des takedowns
+# Boxplot de BlueAvgTDPct stratifié par Winner
+ggplot(ufc_data_cleaned, aes(x = Winner, y = BlueAvgTDPct, fill = Winner)) +
+  geom_boxplot() +
+  labs(title = "Comparaison des victoires et défaites par précision des takedowns",
+       x = "Victoires (Winner)", 
+       y = "Précision des takedowns (BlueAvgTDPct)") +
+  scale_fill_manual(values = c("blue", "red")) +
+  theme_minimal()
+
+# KDE des takedowns réalisés stratifiée par tranche d'âge
+ggplot(ufc_data_cleaned, aes(x = BlueAvgTDLanded, color = AgeGroup, fill = AgeGroup)) +
+  geom_density(alpha = 0.4, size = 1.2) +  # KDE stratifiée
+  labs(
+    title = "Densité des takedowns par tranche d'âge",
+    x = "Takedowns réalisés (BlueAvgTDLanded)",
+    y = "Densité"
+  ) +
+  scale_fill_brewer(palette = "Set3") +  # Palette pour les zones sous les courbes
+  scale_color_brewer(palette = "Set3") +  # Palette pour les contours des courbes
+  theme_minimal()
+
+
+# 9. Distribution des victoires par stance
+# Bar chart des victoires stratifié par BlueStance
+library(ggplot2)
+
+# Vérifiez que les données sont bien nettoyées
+ufc_data_cleaned <- ufc_data_cleaned %>%
+  filter(!is.na(BlueStance), !is.na(Winner))
+
+# Utiliser geom_density pour visualiser la densité des victoires par stance
+ggplot(ufc_data_cleaned, aes(x = BlueStance, fill = Winner, y = ..density..)) +
+  geom_density(alpha = 0.6, adjust = 1.5) +
+  labs(
+    title = "Densité des victoires par stance",
+    x = "Stance (BlueStance)",
+    y = "Densité"
+  ) +
+  scale_fill_manual(values = c("red", "blue")) +  # Couleurs pour Winner
+  theme_minimal()
+
+
+
+```
+```{r}
+# Créer un vecteur vide pour stocker les âges des gagnants
+ages_gagnants <- c()
+
+# Parcourir les données pour trouver les gagnants (Winner == "Blue") et extraire leur âge
+for (i in 1:nrow(ufc_data_cleaned_filtered)) {
+  if (ufc_data_cleaned_filtered$Winner[i] == "Blue") {
+    # Ajouter l'âge du combattant bleu qui a gagné dans le vecteur
+    ages_gagnants <- c(ages_gagnants, ufc_data_cleaned$BlueAge[i])
+  }
+}
+
+# Afficher le vecteur des âges des gagnants
+ages_gagnants
+
+# Créer un vecteur vide pour stocker les âges des perdants
+ages_perdants <- c()
+
+# Parcourir les données pour trouver les perdants (Winner == "Red") et extraire leur âge
+for (i in 1:nrow(ufc_data_cleaned)) {
+  if (ufc_data_cleaned$Winner[i] == "Red") {
+    # Ajouter l'âge du combattant rouge qui a perdu dans le vecteur
+    ages_perdants <- c(ages_perdants, ufc_data_cleaned$RedAge[i])
+  }
+}
+
+# Afficher le vecteur des âges des perdants
+ages_perdants
+# Créer un vecteur d'âges et de labels (1 pour gagnants, 0 pour perdants)
+ages <- c(ages_gagnants, ages_perdants)
+labels <- c(rep(1, length(ages_gagnants)), rep(0, length(ages_perdants)))
+
+# Créer un dataframe pour faciliter l'utilisation avec ggplot
+data_points <- data.frame(Age = ages, Result = labels)
+
+# Créer un graphique avec ggplot
+ggplot(data_points, aes(x = Age, y = Result)) +
+  geom_point(color = "blue", alpha = 0.5) +  # Ajouter les points avec une opacité de 0.5
+  labs(title = "Répartition des gagnants et perdants en fonction de l'âge",
+       x = "Âge",
+       y = "Résultat (1 = Gagnant, 0 = Perdant)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotation des labels de l'axe x
+
+```
+```{r}
+# Créer un vecteur pour les coups significatifs atterris des gagnants
+sigStr_gagnants <- c()
+
+# Parcourir les données pour trouver les gagnants (Winner == "Blue") et extraire leur BlueAvgSigStrLanded
+for (i in 1:nrow(ufc_data_cleaned_filtered)) {
+  if (ufc_data_cleaned$Winner[i] == "Blue") {
+    # Ajouter le nombre de coups significatifs atterris du combattant bleu gagnant
+    sigStr_gagnants <- c(sigStr_gagnants, ufc_data_cleaned$BlueAvgSigStrLanded[i])
+  }
+}
+
+# Créer un vecteur pour les coups significatifs atterris des perdants (Red)
+sigStr_perdants <- c()
+
+# Parcourir les données pour trouver les perdants (Winner == "Red") et extraire leur BlueAvgSigStrLanded
+for (i in 1:nrow(ufc_data_cleaned_filtered)) {
+  if (ufc_data_cleaned$Winner[i] == "Red") {
+    # Ajouter le nombre de coups significatifs atterris du combattant bleu qui a perdu
+    sigStr_perdants <- c(sigStr_perdants, ufc_data_cleaned$BlueAvgSigStrLanded[i])
+  }
+}
+
+# Créer un vecteur pour les labels (1 pour gagnants, 0 pour perdants)
+sigStr_values <- c(sigStr_gagnants, sigStr_perdants)
+labels <- c(rep(1, length(sigStr_gagnants)), rep(0, length(sigStr_perdants)))
+
+# Créer un dataframe pour faciliter l'utilisation avec ggplot
+data_sigStr <- data.frame(SigStrLanded = sigStr_values, Result = labels)
+
+# Créer un graphique avec ggplot
+ggplot(data_sigStr, aes(x = SigStrLanded, y = Result)) +
+  geom_point(color = "blue", alpha = 0.5) +  # Ajouter les points avec une opacité de 0.5
+  labs(title = "Répartition des gagnants et perdants en fonction des coups significatifs atterris",
+       x = "Coups significatifs atterris (BlueAvgSigStrLanded)",
+       y = "Résultat (1 = Gagnant, 0 = Perdant)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotation des labels de l'axe x
+
+```
+```{r}
+# Créer un vecteur pour les cotes des gagnants
+odds_gagnants <- c()
+
+# Parcourir les données pour trouver les gagnants (Winner == "Blue") et extraire leur BlueOdds
+for (i in 1:nrow(ufc_data_cleaned)) {
+  if (ufc_data_cleaned$Winner[i] == "Blue") {
+    # Ajouter les cotes du combattant bleu gagnant
+    odds_gagnants <- c(odds_gagnants, ufc_data_cleaned$BlueOdds[i])
+  }
+}
+
+# Créer un vecteur pour les cotes des perdants (Red)
+odds_perdants <- c()
+
+# Parcourir les données pour trouver les perdants (Winner == "Red") et extraire leur BlueOdds
+for (i in 1:nrow(ufc_data_cleaned)) {
+  if (ufc_data_cleaned$Winner[i] == "Red") {
+    # Ajouter les cotes du combattant bleu qui a perdu
+    odds_perdants <- c(odds_perdants, ufc_data_cleaned$BlueOdds[i])
+  }
+}
+
+# Créer un vecteur pour les labels (1 pour gagnants, 0 pour perdants)
+odds_values <- c(odds_gagnants, odds_perdants)
+labels <- c(rep(1, length(odds_gagnants)), rep(0, length(odds_perdants)))
+
+# Créer un dataframe pour faciliter l'utilisation avec ggplot
+data_odds <- data.frame(BlueOdds = odds_values, Result = labels)
+
+# Créer un graphique avec ggplot
+ggplot(data_odds, aes(x = BlueOdds, y = Result)) +
+  geom_point(color = "blue", alpha = 0.5) +  # Ajouter les points avec une opacité de 0.5
+  labs(title = "Répartition des gagnants et perdants en fonction des cotes",
+       x = "Cotes des combattants bleus (BlueOdds)",
+       y = "Résultat (1 = Gagnant, 0 = Perdant)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotation des labels de l'axe x
+
+```
+```{r}
+originaldata = read.csv('ufc-master.csv')
+dim(originaldata)
+library(skimr)
+skim(originaldata)
+
+```
+```{r}
+library(summarytools)
+dfSummary(originaldata)
+```
+
+```{r}
+# Chargement des bibliothèques nécessaires
+library(tidyverse)   # Pour la manipulation des données
+library(FactoMineR)  # Pour la PCA
+library(factoextra)  # Pour visualisation
+library(caret)       # Pour normalisation
+
+#  Chargement du dataset UFC
+ufc_data <- read.csv("ufc_data_cleaned.csv")
+
+#  Suppression de la colonne cible et sélection des variables numériques
+target_variable <- "Winner"  # Modifier si nécessaire
+ufc_features <- ufc_data %>%
+  select(-one_of(target_variable)) %>%  # Supprime la variable cible
+  select(where(is.numeric))  # Garde uniquement les variables numériques
+
+#  Normalisation des données (centrer-réduire)
+ufc_scaled <- as.data.frame(scale(ufc_features))
+
+# Application de la PCA
+pca_model <- PCA(ufc_scaled, scale.unit = TRUE, ncp = ncol(ufc_scaled), graph = FALSE)
+
+# Contribution des variables dans la première composante principale (Dim1)
+importance <- abs(pca_model$var$coord[,1])  # Contribution absolue sur Dim1
+
+# Sélection des 12 variables les plus influentes
+top_12_features <- names(sort(importance, decreasing = TRUE)[1:12])
+
+# Séparation en 6 variables pour Blue et 6 variables pour Red
+top_6_blue <- top_12_features[grep("^Blue", top_12_features)][1:6]
+top_6_red  <- top_12_features[grep("^Red", top_12_features)][1:6]
+
+# Affichage des résultats
+print("🔹 Les 6 variables les plus déterminantes pour l'équipe Blue :")
+print(top_6_blue)
+
+print("🔹 Les 6 variables les plus déterminantes pour l'équipe Red :")
+print(top_6_red)
+
+# Visualisation des contributions des variables
+fviz_contrib(pca_model, choice = "var", axes = 1, top = 15)
+
+
+
+
+```
+
+
+```{r}
+
+#  Chargement des bibliothèques nécessaires
+library(dplyr)
+
+# Chargement des données
+ufc_data <- read.csv("ufc_data_cleaned.csv", header = TRUE, sep = ",", dec = ".")
+
+# Sélection des 6 meilleures variables pour Blue et Red + Winner
+selected_vars <- c("BlueOdds", "RedOdds", 
+                   "BlueAvgSigStrPct", "RedAvgSigStrPct",
+                   "BlueAvgSigStrLanded", "RedAvgSigStrLanded",
+                   "BlueAvgTDLanded", "RedAvgTDLanded",
+                   "BlueAvgTDPct", "RedAvgTDPct",
+                   "BlueAge", "RedAge",
+                   "Winner")
+
+ufc_top12_data <- ufc_data %>% select(all_of(selected_vars))
+
+# Conversion de Winner en binaire (0 = Blue, 1 = Red)
+ufc_top12_data$Winner <- ifelse(ufc_top12_data$Winner == "Blue", 0, 1)
+
+# Sauvegarde du nouveau dataset
+write.csv(ufc_top12_data, "ufc_top12_data.csv", row.names = FALSE)
+
+#  Vérification des premières lignes
+head(ufc_top12_data)
+
+#  Vérification des valeurs uniques de Winner après conversion
+table(ufc_top12_data$Winner)
+
+
+
+
+
+```
+
+
+
+
+```{r}
+
+# 
+library(synthpop)
+
+# Charger le dataset existant
+data <- read.csv("ufc_top12_data.csv", stringsAsFactors = FALSE)
+
+#  Convertir la variable cible 'Winner'si c'est pas fait 
+data$Winner <- as.factor(data$Winner)
+
+# Générer 10 jeux de données synthétiques (chacun de la même taille que l'original)
+synthetic_list <- vector("list", 10)
+set.seed(123)
+for(i in 1:10){
+  syn_data <- syn(data, seed = 123 + i)
+  synthetic_list[[i]] <- syn_data$syn
+}
+
+# Combiner les jeux synthétiques en un seul dataset
+synthetic_data <- do.call(rbind, synthetic_list)
+cat("Nombre d'observations générées :", nrow(synthetic_data), "\n")
+
+# Sauvegarder le dataset synthétique combiné
+write.csv(synthetic_data, "ufc_top12_data_synthetic_combined.csv", row.names = FALSE)
+cat("Dataset synthétique combiné sauvegardé sous 'ufc_top12_data_synthetic_combined.csv'.\n")
+
+
+```
+

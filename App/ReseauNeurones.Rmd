@@ -1,0 +1,123 @@
+---
+title: "Réseau de Neurones pour la prédiction"
+output: html_notebook
+---
+
+## Charger les données :
+
+```{r}
+# Charger les librairies nécessaires
+library(dplyr)
+library(reticulate)
+library(keras3)
+library(tensorflow)
+
+
+data <- read.csv("ufc_data_final2.csv")
+
+# Vérifier les premières lignes du dataset
+print(head(data))
+```
+
+## Choisir les features pertinentes
+
+```{r}
+
+data2 <- data %>% select(
+  BlueAvgSigStrLanded, RedAvgSigStrLanded,
+  BlueAvgSigStrPct, RedAvgSigStrPct,
+  BlueAvgTDLanded, RedAvgTDLanded,
+  RedHeightCms, BlueHeightCms,
+  RedReachCms, BlueReachCms,
+  BlueAge, RedAge, Winner
+)
+
+
+#data2$Winner <- ifelse(data2$Winner == "Red", 0, 1)
+#faire scaling pour les données
+
+print(table(data2$Winner))
+
+```
+
+## transformer les données en tenseurs et extractions de X, Y
+
+```{r}
+X <- as.matrix(data2[, -ncol(data2)])  # Toutes les colonnes sauf 'Winner'
+Y <- as.matrix(data2$Winner)  # Variable cible
+```
+
+## Diviser les données en training et testing
+
+```{r}
+# Diviser les données en train et test
+n <- nrow(data2)
+train_index <- sample(1:n, size = 0.8 * n)
+X_train <- X[train_index, , drop = FALSE]
+Y_train <- Y[train_index, , drop = FALSE]
+X_test  <- X[-train_index, , drop = FALSE]
+Y_test  <- Y[-train_index, , drop = FALSE]
+
+```
+
+## Definition du modèle :
+
+```{r}
+model <- keras_model_sequential() 
+model %>% 
+  layer_dense(units = 12, activation = "relu", input_shape = c(ncol(X))) %>%
+  layer_dense(units = 4, activation = "relu") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+```
+
+## Compilation du modèle :
+
+```{r}
+model %>% compile(
+  loss = "binary_crossentropy", 
+  optimizer = optimizer_adam(),  
+  metrics = c("accuracy")
+)
+
+```
+
+## Entrainement :
+
+```{r}
+# Entraîner le modèle
+history <- model %>% fit(
+  X_train, Y_train, 
+  epochs = 100, 
+  batch_size = 16, 
+  validation_split = 0.2, 
+  verbose = 1)
+```
+
+```{r}
+score <- model %>% evaluate(X_test, Y_test, verbose = 0)
+cat("Test loss:", score$loss, "\n")
+cat("Test accuracy:", score$accuracy, "\n")
+
+```
+
+## Tester et comparaison avec X_Test
+
+```{r}
+predictions <- model %>% predict(X_test)
+print(head(predictions)) 
+```
+
+```{r}
+predictions_binary <- ifelse(predictions > 0.5, 1, 0)
+print(head(predictions_binary))
+
+comparison <- data.frame(Predicted = predictions_binary, Actual = Y_test)
+comparison
+```
+
+## Enregistrer le modèle : 
+
+```{r}
+save_model(model, "model_ufc.keras")
+```
+
