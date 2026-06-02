@@ -12,6 +12,20 @@
 <!-- 👉 Ajoute ici une capture de l'app Flask et/ou un graphe d'EDA :
      ![Démo](docs/demo.png) -->
 
+
+### 🎥 Présentation du projet — Partie 1
+
+[![Regarder la vidéo 1](https://img.youtube.com/vi/_-jlQYU9I4c/maxresdefault.jpg)](https://www.youtube.com/watch?v=_-jlQYU9I4c)
+
+*Cliquez sur l'image pour lancer la première vidéo sur YouTube.*
+
+
+### 🎥 Présentation du projet — Partie 2
+
+[![Regarder la vidéo 2](https://img.youtube.com/vi/Cs4n6_aqARk/maxresdefault.jpg)](https://www.youtube.com/watch?v=Cs4n6_aqARk)
+
+*Cliquez sur l'image pour lancer la deuxième vidéo sur YouTube.*
+
 ---
 
 ## 🎯 Objectif
