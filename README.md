@@ -61,15 +61,6 @@ un modèle servi en ligne.
 - Évaluation par **accuracy**, **MAE** et matrices de confusion.
 - Le **stacking** donne la meilleure performance d'ensemble.
 
-> ℹ️ Renseigne tes chiffres exacts ici une fois le notebook ré-exécuté :
->
-> | Modèle | Accuracy |
-> |---|---|
-> | Naïve Bayes | … |
-> | KNN | … |
-> | Random Forest | … |
-> | AdaBoost | … |
-> | **Stacking** | **… (meilleur)** |
 
 ### 3. Réseau de neurones (`analysis/ReseauNeurones.Rmd`)
 - Implémenté en R via **`keras3`** + **`reticulate`** (backend TensorFlow).
